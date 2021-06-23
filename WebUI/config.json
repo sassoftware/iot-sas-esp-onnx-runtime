@@ -1,0 +1,37 @@
+{
+  "model-types": [
+    {
+      "name": "Tiny YOLO V2",
+      "value": "tiny-yolov2",
+      "models": [
+        {
+          "name": "ModelZoo Tinyyolo V2 8",
+          "value": "ModelZoo-tinyyolov2-8.onnx"
+        },
+        {
+          "name": "SAS Tiny Yolo V2 Face",
+          "value": "SAS-Tiny-Yolov2-face.onnx"
+        },
+        {
+          "name": "SAS Tiny Yolo V2",
+          "value": "SAS-Tiny-Yolov2.onnx"
+        }
+      ]
+
+    }
+  ],
+  "execution-providers":[
+    {
+        "name":"CPU",
+        "value":"cpu"
+    },
+    {
+        "name":"CUDA",
+        "value":"cuda"
+    },
+    {
+        "name":"TensorRT",
+        "value":"tensorrt"
+    }
+  ]
+}

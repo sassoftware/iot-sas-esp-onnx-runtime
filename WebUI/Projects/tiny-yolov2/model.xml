@@ -1,0 +1,263 @@
+<project name="ONNX_project" pubsub="auto" threads="4" use-tagged-token="true" heartbeat-interval="1">
+  <description><![CDATA[Copyright 2021, SAS Institute Inc., Cary, NC, USA.  All Rights Reserved.
+    SPDX-License-Identifier: Apache-2.0]]></description>
+  <metadata>
+    <meta id="studioUploadedBy">anonymous</meta>
+    <meta id="studioUploaded">1623257856275</meta>
+    <meta id="studioModifiedBy">anonymous</meta>
+    <meta id="studioModified">1623313844441</meta>
+    <meta id="layout">{"contquery":{"w_count_objects":{"x":190,"y":660},"w_data":{"x":190,"y":50},"w_parse_labels":{"x":190,"y":535},"w_post_process":{"x":190,"y":415},"w_pre_process":{"x":190,"y":175},"w_reader":{"x":-80,"y":210},"w_score":{"x":190,"y":295}}}</meta>
+  </metadata>
+  <properties>
+    <property name="BASE_PATH"><![CDATA[/mnt/data]]></property>
+    <property name="DEMO_PATH"><![CDATA[@BASE_PATH@/ESPDemo]]></property>
+    <property name="ONNX_MODELS_PATH"><![CDATA[@DEMO_PATH@/Models]]></property>
+    <property name="ONNX_MODEL"><![CDATA[tiny-yolov2/ModelZoo-tinyyolov2-8.onnx]]></property>
+    <property name="FILE_INPUT_NAME"><![CDATA[@DEMO_PATH@/Input/SASPeople.csv]]></property>
+    <property name="IMAGE_REPEAT_COUNT"><![CDATA[100]]></property>
+    <property name="EXEC_PROV"><![CDATA[CPU]]></property>
+  </properties>
+  <mas-modules>
+    <mas-module module="tensorProcess" language="python" func-names="preprocess,postprocess">
+      <code><![CDATA[
+import os, sys
+import numpy as np
+
+args_demo_dir = "@DEMO_PATH@"
+args_models_dir = "@ONNX_MODELS_PATH@"
+args_model_metadata = "@ONNX_MODEL@"
+
+#args_models_dir="Models"
+#args_model_metadata="tiny-yolov2/SAS-Tiny-Yolov2-face.py"
+
+#Import ONNX ESP modules
+sys.path.append(args_demo_dir)
+from _modules.input_preproc import PreProcess
+import _modules.utils as utils
+import _modules.tensor_utils as tensor_utils
+
+model_path = os.path.dirname(args_model_metadata)
+
+#Init Phase
+sys.path.append(args_models_dir)
+model_metadata = utils.load_module(args_model_metadata)
+pre_process = PreProcess(model_metadata.inputs_parameters, model_metadata.onnx_model_type)
+decode_module = utils.load_module(os.path.join(model_path, model_metadata.output_decoder))
+decode_decoder = decode_module.Decoder(model_metadata.output_decoder_parameters, model_metadata.inputs_parameters)
+
+
+def preprocess(id, image):
+    "Output: id, tensor"
+
+    img_np = tensor_utils.Image2Array(image)
+    inference_input = pre_process.process(img_np)
+    tensor = tensor_utils.Array2Tensor(inference_input[0])
+
+    return id, tensor
+
+
+def postprocess(id, tensor1_out):
+    "Output: id, model_name, model_type, n_objects, coords, coords_type, scores, labels"
+
+    tensor1, tensor1_dims = tensor_utils.Tensor2Array(tensor1_out)
+    tensor1 = tensor1.reshape(*tensor1_dims)
+    tensor1 = np.float32(tensor1)
+    #Expand the tensor since the decoder need to infer tensor shape to iterate the output
+    tensor1_exp = np.expand_dims(tensor1, axis=0)
+
+    #decode signature:
+    # inference_result: tensors, mandatory.
+    # image_shape. Dimension of the infereced image. It is need to normalize output. Not needed for yolov2
+    # isvideo needed for open pose only if data come form cameras or streaming
+    decoded_result =  decode_decoder.decode(tensor1_exp)
+
+    boxes, classes, scores = decoded_result
+
+    ret_boxes = []
+    for i in range(len(boxes)):
+        ret_boxes.extend(boxes[i].tolist())
+    ret_label=""
+    for j in range(len(classes)):
+        ret_label+=model_metadata.output_labels[int(classes[j])] + ","
+    ret_scores = np.array(scores).tolist()
+
+    return id, model_metadata.onnx_model, model_metadata.onnx_model_type, len(boxes), ret_boxes, model_metadata.output_coord_type, ret_scores, ret_label]]></code>
+    </mas-module>
+  </mas-modules>
+  <contqueries>
+    <contquery name="contquery" timing-threshold="5000">
+      <windows>
+        <window-source index="pi_EMPTY" insert-only="true" name="w_data">
+          <schema>
+            <fields>
+              <field name="id"    type="int64" key="true"/>
+              <field name="image" type="blob"/>
+            </fields>
+          </schema>
+          <connectors>
+            <connector class="fs" name="publisher" active="@FILE_INPUT_ACTIVE@">
+              <properties>
+                <property name="type"><![CDATA[pub]]></property>
+                <property name="fstype"><![CDATA[csv]]></property>
+                <property name="fsname"><![CDATA[@FILE_INPUT_NAME@]]></property>
+                <property name="transactional"><![CDATA[true]]></property>
+                <property name="blocksize"><![CDATA[1]]></property>
+                <property name="repeatcount"><![CDATA[@IMAGE_REPEAT_COUNT@]]></property>
+              </properties>
+            </connector>
+          </connectors>
+        </window-source>
+        <window-calculate index="pi_EMPTY" produces-only-inserts="true" name="w_pre_process" algorithm="MAS">
+          <schema>
+            <fields>
+              <field name="id"          type="int64" key="true"/>
+              <field name="image"       type="blob"/>
+              <field name="tensor"      type="blob"/>
+            </fields>
+          </schema>
+          <mas-map>
+            <window-map module="tensorProcess" function="preprocess" revision="0" source="w_data"/>
+          </mas-map>
+          <connectors>
+            <connector class="fs" name="pre_process_debug" active="false">
+              <properties>
+                <property name="type"><![CDATA[sub]]></property>
+                <property name="fstype"><![CDATA[csv]]></property>
+                <property name="fsname"><![CDATA[@BASE_PATH@/out_pre.csv]]></property>
+                <property name="snapshot"><![CDATA[true]]></property>
+              </properties>
+            </connector>
+          </connectors>
+        </window-calculate>
+        <window-model-reader name="w_reader" model-type="onnx">
+          <parameters>
+            <properties>
+              <property name="reference"><![CDATA[@ONNX_MODELS_PATH@/@ONNX_MODEL@]]></property>
+              <property name="execProvider">@EXEC_PROV@</property>
+              <property name="openvinoDeviceType">@OPENVINO_DEVICE@</property>
+            </properties>
+          </parameters>
+        </window-model-reader>
+        <window-score name="w_score">
+          <schema>
+            <fields>
+              <field name="id"          type="int64" key="true"/>
+              <field name="image"       type="blob" />
+              <field name="tensor1_out" type="blob" />
+            </fields>
+          </schema>
+          <models>
+            <offline model-type="onnx">
+              <input-map>
+                <properties>
+                  <!-- SAS models and Model Zoo ones has different inputs 
+                      this double declaration ensure that both works-->
+                  <property name="image">tensor</property>
+                  <property name="input1">tensor</property>
+                </properties>
+              </input-map>
+              <output-map>
+                <properties>
+                  <!-- SAS models and Model Zoo ones has different inputs 
+                      this double declaration ensure that both works-->
+                  <property name="grid">tensor1_out</property>
+                  <property name="convo.9">tensor1_out</property>
+                </properties>
+              </output-map>
+            </offline>
+          </models>
+          <connectors>
+            <connector class="fs" name="score_debug" active="false">
+              <properties>
+                <property name="type"><![CDATA[sub]]></property>
+                <property name="fstype"><![CDATA[csv]]></property>
+                <property name="fsname"><![CDATA[@BASE_PATH@/out_calc.csv]]></property>
+                <property name="snapshot"><![CDATA[true]]></property>
+                <property name="unbufferedoutputstreams"><![CDATA[true]]></property>
+              </properties>
+            </connector>
+          </connectors>
+        </window-score>
+        <window-calculate index="pi_EMPTY" produces-only-inserts="true" name="w_post_process" algorithm="MAS">
+          <schema>
+            <fields>
+              <field name="id"              type="int64" key="true"/>
+              <field name="image"           type="blob"/>  
+              <field name="model_name"      type="string" />                                  
+              <field name="model_type"      type="string" />
+              <field name="n_objects"       type="double" />
+              <field name="coords"          type="array(dbl)" />
+              <field name="coords_type"     type="string" />
+              <field name="scores"          type="array(dbl)" />
+              <field name="labels"          type="string" />
+            </fields>
+          </schema>
+          <mas-map>
+            <window-map module="tensorProcess" function="postprocess" revision="0" source="w_score"/>
+          </mas-map>
+          <connectors>
+            <connector class="fs" name="post_process_debug" active="false">
+              <properties>
+                <property name="type"><![CDATA[sub]]></property>
+                <property name="fstype"><![CDATA[csv]]></property>
+                <property name="fsname"><![CDATA[@BASE_PATH@/out_post.csv]]></property>
+                <property name="snapshot"><![CDATA[true]]></property>
+              </properties>
+            </connector>
+          </connectors>
+        </window-calculate>
+        <window-functional index="pi_EMPTY" name="w_parse_labels">
+          <schema>
+            <fields>
+              <field name="id" type="int64" key="true"/>
+              <field name="subid" type="int64" key="true"/>
+              <field name="label" type="string"/>
+            </fields>
+          </schema>
+          <generate><![CDATA[0]]></generate>
+          <event-loops>
+            <event-loop-regex name="Loop" data="split_label">
+              <use-text><![CDATA[$labels]]></use-text>
+              <regex group="0"><![CDATA[([^,]+)]]></regex>
+              <function-context>
+                <functions>
+                  <function name="label"><![CDATA[$split_label]]></function>
+                  <function name="subid"><![CDATA[eventNumber()]]></function>
+                </functions>
+              </function-context>
+            </event-loop-regex>
+          </event-loops>
+        </window-functional>
+        <window-aggregate index="pi_HASH" name="w_count_objects">
+          <schema>
+            <fields>
+              <field name="label" type="string" key="true"/>
+              <field name="counter" type="int64"/>
+            </fields>
+          </schema>
+          <output>
+            <field-expr><![CDATA[ESP_aCountNonNull(label)]]></field-expr>
+          </output>
+          <connectors>
+            <connector class="fs" name="w_count_objects_out" active="true">
+              <properties>
+                <property name="type"><![CDATA[sub]]></property>
+                <property name="fstype"><![CDATA[csv]]></property>
+                <property name="fsname"><![CDATA[@BASE_PATH@/out_aggregate.csv]]></property>
+                <property name="snapshot"><![CDATA[true]]></property>
+              </properties>
+            </connector>
+          </connectors>
+        </window-aggregate>
+      </windows>
+      <edges>
+        <edge source="w_data" target="w_pre_process" role="data"/>
+        <edge source="w_reader" target="w_score" role="model"/>
+        <edge source="w_pre_process" target="w_score" role="data"/>
+        <edge source="w_score" target="w_post_process" role="data"/>
+        <edge source="w_post_process" target="w_parse_labels"/>
+        <edge source="w_parse_labels" target="w_count_objects"/>
+      </edges>
+    </contquery>
+  </contqueries>
+</project>

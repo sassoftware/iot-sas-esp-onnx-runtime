@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<!--
+Copyright © 2021, SAS Institute Inc., Cary, NC, USA.  All Rights Reserved.
+SPDX-License-Identifier: Apache-2.0    
+ -->
+<html>
+
+<head>
+
+<meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+<meta content="utf-8" http-equiv="encoding">
+
+<title>ESP ONNX Demo</title>
+
+<script src="https://cdn.plot.ly/plotly-latest.min.js" charset="utf-8"></script>
+<script src="https://visjs.github.io/vis-network/standalone/umd/vis-network.min.js"></script>
+
+<script type="text/javascript">
+var _esp = null;
+</script>
+
+<!-- Run from an esp-connect install -->
+<!--
+<link rel="stylesheet" href="./esp-connect/style/connect.css" />
+<script type="module">
+import {esp} from "./esp-connect/js/ui/api.js";
+_esp = esp;
+</script>
+-->
+
+<!-- Run from an esp-connect webpack bundle (you can put the bundle anywhere) -->
+<script type="text/javascript" src="./esp-connect-ui.js"></script>
+<script type="text/javascript">
+_esp = esp_connect_ui.api;
+</script>
+<!--
+-->
+
+<script type="text/javascript">
+
+var _project = "ONNX_project";
+var _connection = null;
+var _config = null;
+
+var _isPublisher = true;
+var _isViewer = true;
+
+var _objectSubscriber = null;
+var _objectPublisher = null;
+var _objectTable = null;
+
+var _modelXml = null;
+var _storage = null;
+var _visuals = null;
+var _content = null;
+var _detectionContent = null;
+var _videoContent = null;
+var _wrapper = null;
+var _video = null;
+var _server = null;
+var _context = null;
+var _canvas = null;
+var _viewer = null;
+
+var _videoWidth = 400;
+
+var _size = {width:640,height:480};
+var _padding = 60;
+
+var _scale = 1;
+
+var _publishObjects = false;
+
+var _searchtext = [];
+var _color1 = "white";
+var _color2 = "blue";
+var _combine = false;
+var _search = false;
+var _mirror = false;
+var _quality = 1;
+var _publishRate = 5;
+var _minScore = 0;
+
+var _numchannels = 1;
+var _channels = [];
+var _channel = 1;
+
+var _interval = null;
+
+class Channel
+{
+    constructor()
+    {
+        this._connection = null;
+        this._publisher = null;
+        this._channel = _channel;
+        this._image = null;
+
+        if (_isViewer)
+        {
+            if (_combine == false)
+            {
+                this._image = createImageContainer();
+            }
+        }
+
+        _channel++;
+
+        const   self = this;
+
+        var delegate = {
+            ready:function(connection) {
+                self._connection = connection;
+
+                if (_isPublisher)
+                {
+                    self._connection.getPublisher({window:_project + "/contquery/w_data",binary:true}).then(
+                        function(result) {
+                            self._publisher = result;
+                            _channels.push(self);
+                            self.size();
+                        }
+                    );
+                }
+
+                if (_isViewer)
+                {
+                    var filter = "eq($channel,'" + self._channel + "')";
+                    //self._connection.getEventStream({window:_project + "/contquery/w_python2",maxevents:1,interval:0,filter:filter}).then(
+                    self._connection.getEventStream({window:_project + "/contquery/w_post_process",maxevents:1,interval:0}).then(
+                        function(result) {
+                            if (self._image != null)
+                            {
+                                //self._viewer = _visuals.createImageViewer(self._image,result,{image:"image",header:"Channel " + self._channel,show_header:true,filter_in_title:false});
+                                self._viewer = _visuals.createImageViewer(self._image,result,{image:"image",header:"Output Image",show_header:true,filter_in_title:false});
+                                setViewerOptions(self._viewer);
+                                self.size();
+                                _esp.size();
+                            }
+                            else
+                            {
+                                result.addDelegate(self);
+                            }
+                        }
+                    );
+
+                    //if (_storage.getOpt("type","tiny-yolov2") == "tiny-yolov2")
+                    {
+                        self._connection.getEventCollection({window:_project + "/contquery/w_count_objects",sort:"counter",pagesize:0}).then(
+                            function(result) {
+                                var table = document.createElement("table");
+                                var tr;
+                                var td;
+
+                                table.style.width = "80%";
+                                table.style.height = "350px";
+
+                                /*
+                                tr = document.createElement("tr");
+                                td = document.createElement("td");
+                                td.colSpan = 2;
+                                td.style.textAlign = "left";
+                                td.style.paddingTop = "20px";
+                                table.appendChild(tr).appendChild(td);
+                                td.innerHTML = "Objects Detected";
+                                */
+
+                                table.appendChild(tr = document.createElement("tr"));
+
+                                tr.appendChild(td = document.createElement("td"));
+                                td.style.width = "30%";
+                                var div = document.createElement("div");
+                                div.style.width = "100%";
+                                td.appendChild(div);
+
+                                td.style.paddingRight = "20px";
+
+                                _detectionContent.appendChild(table);
+
+                                div.style.width = "300px";
+                                div.style.height = "300px";
+                                _visuals.createTable(div,result,{show_header:true,header:"Objects Detected<br/>Per Frame"});
+
+                                tr.appendChild(td = document.createElement("td"));
+                                td.style.width = "70%";
+                                div = document.createElement("div");
+                                div.style.width = "100%";
+                                div.style.height = "300px";
+                                td.appendChild(div);
+                                _visuals.createBarChart(div,result,{show_header:true,y:"counter",header:"Objects Detected<br/>Per Frame"});
+
+                                _esp.size();
+                            }
+                        );
+                    }
+
+                    /*
+                    if (_storage.getOpt("type","tiny-yolov2") == "tiny-yolov2")
+                    {
+                        self._connection.getEventCollection({window:_project + "/contquery/w_count_objects",sort:"counter"}).then(
+                            function(result) {
+                                var div = document.createElement("div");
+                                div.style.width = "300px";
+                                div.style.height = "300px";
+                                _content.appendChild(div);
+                                _visuals.createTable(div,result,{header:"Objects Detected"});
+
+                                div = document.createElement("div");
+                                div.style.width = "500px";
+                                div.style.height = "300px";
+                                _content.appendChild(div);
+                                _visuals.createBarChart(div,result,{y:"counter",header:"Objects Detected"});
+
+                                _esp.size();
+                            }
+                        );
+                    }
+                    */
+                }
+            }
+        };
+
+        _esp.connect(_server,delegate);
+    }
+
+    dataChanged(datasource,data,clear)
+    {
+        if (data != null && data.length > 0)
+        {
+            _viewer.image = data[data.length - 1];
+        }
+    }
+
+    size()
+    {
+        if (this._image != null)
+        {
+            this._image.style.width = (_size.width * _scale + _padding) + "px";
+            this._image.style.height = (_size.height * _scale + _padding + 20) + "px";
+        }
+
+        if (this._viewer != null)
+        {
+            this._viewer.setOpt("image_width",_size.width);
+            this._viewer.setOpt("image_height",_size.height);
+            this._viewer.setOpt("scale",_scale);
+        }
+    }
+
+    close()
+    {
+        this._connection.close();
+    }
+
+    publish(data)
+    {
+        var o = {};
+        o["id"] = _esp.guid();
+        o["channel"] = this._channel;
+
+        if (this._publisher.isBinary())
+        {
+            var imagedata = atob(data);
+            o["image"] = _esp.createBuffer(imagedata);
+        }
+        else
+        {
+            o["image"] = data;
+        }
+
+        o["width"] = _size.width;
+        o["height"] = _size.height;
+        o["timestamp"] = new Date().getTime();
+
+        this._publisher.add(o);
+        this._publisher.publish();
+    }
+}
+
+function
+init()
+{
+    _storage = _esp.getStorage("onnx_demo");
+
+/*
+console.log(JSON.stringify(_storage,null,"\t"));
+_storage.recreate();
+*/
+    if (_storage.hasOpt("models-home") == false)
+    {
+        _storage.setOpt("models-home","Models");
+    }
+
+    if (_storage.hasOpt("projects-home") == false)
+    {
+        _storage.setOpt("projects-home","Projects");
+    }
+
+//console.log(JSON.stringify(_storage,null,"\t"));
+
+    _videoWidth = _storage.getOpt("video_width","400");
+    _quality = _storage.getOpt("image_quality",".5");
+    _color1 = _storage.getOpt("color1","white");
+    _color2 = _storage.getOpt("color2","white");
+    _numchannels = _storage.getOpt("numchannels",1);
+    _scale = _storage.getOpt("scale",1);
+    _publishRate = _storage.getOpt("publish_rate",5);
+    _minscore = _storage.getOpt("min_score",0);
+    _combine = _storage.getOpt("combine_output",false);
+    _search = _storage.getOpt("search",false);
+    _mirror = _storage.getOpt("mirror",false);
+    _searchtext = _storage.getOpt("searchtext",[]);
+    _publishObjects = _storage.getOpt("publish_objects",false);
+
+    var parms = _esp.getParms();
+
+    if (parms.hasOwnProperty("role"))
+    {
+        var s = parms["role"];
+        _isPublisher = (s == "publisher");
+        _isViewer = (s == "viewer");
+    }
+
+    if (parms.hasOwnProperty("project"))
+    {
+        _project = parms["project"];
+    }
+
+    if (_esp.hasParm("theme") == false)
+    {
+        _esp.setParm("theme","sas_opal");
+    }
+
+    _content = document.getElementById("content");
+
+    parms["connect-ui"] = new URL("esp-connect-ui.js",document.URL).toString();
+    /*
+    parms["connect-ui"] = "http://espsrv01.unx.sas.com:18080/esp/webpack/esp-connect-ui.js";
+    */
+
+    _visuals = _esp.createVisuals(parms);
+
+    if (_isPublisher)
+    {
+        _video = document.createElement("video");
+        _video.controls = true;
+        _video.disableRemotePlayback = true;
+        _video.disablePictureInPicture = true;
+        _video.controlsList = "nofullscreen nodownload";
+        _video.addEventListener("loadedmetadata",function() {
+            size();
+        });
+        _video.addEventListener("play",function() {
+            _video.style.transform = _mirror ? "scaleX(-1)" : "scaleX(1)";
+
+            if (_video.requestVideoFrameCallback != null)
+            {
+                _video.requestVideoFrameCallback(videocb);
+            }
+            else
+            {
+                _interval = setInterval(publish,parseInt(1000 / _publishRate));
+            }
+        });
+        _video.addEventListener("pause",function() {
+            if (_interval != null)
+            {
+                clearInterval(_interval);
+                _interval = null;
+            }
+        });
+        _video.className = "webcam";
+        _video.width = _videoWidth;
+        _content.appendChild(_video);
+        var header = "Video";
+        header += "&nbsp;" + "<a class='icon' href='javascript:onnx()'>&#xf137;</a>";
+        header += "&nbsp;" + "<a class='icon' href='javascript:properties()'>&#xf360;</a>";
+        _wrapper = _visuals.createWrapper(_video,{header:header,style:{width:(_size.width + _padding) + "px",height:(_size.height) + "px"}});
+        createCanvas(_scale);
+    }
+
+    document.getElementById("bannerTitle").innerHTML = document.title;
+
+    _esp.handleLayout();
+
+    var config = (parms.hasOwnProperty("config")) ? parms["config"] : "config.json"; 
+
+    _esp.getAjax().create(new URL(config,document.URL).toString()).get().then(
+        function(result) {
+            _config = JSON.parse(result.text);
+            onnx();
+        }
+    );
+    /*
+    connect("https://d10d969.na.sas.com:40001");
+    */
+}
+
+function
+size()
+{
+    _size = {width:_video.offsetWidth,height:_video.offsetHeight};
+    createCanvas(_scale);
+    _wrapper.element.style.width = (_video.offsetWidth + _padding) + "px";
+    _wrapper.element.style.height = (_video.offsetHeight + _padding + 20) + "px";
+    _wrapper.element.style.margin = "auto";
+    _channels.forEach((channel) => {
+        channel.size();
+    });
+    _esp.size();
+}
+
+function
+createChannels()
+{
+    _channels.forEach((channel) => {
+        channel.close();
+    });
+
+    while (_content.firstChild != null)
+    {
+        _content.removeChild(_content.firstChild);
+    }
+
+    _videoContent = document.createElement("div");
+    _videoContent.className = "container";
+    _videoContent.style.padding = "20px";
+    _videoContent.style.width = "100%";
+    _videoContent.style.border = "1px solid #d8d8d8";
+
+    _detectionContent = document.createElement("div");
+    _detectionContent.className = "container";
+    _detectionContent.style.width = "100%";
+    _detectionContent.style.border = "1px solid #d8d8d8";
+    _detectionContent.style.borderTop = "0";
+
+    _content.appendChild(_videoContent);
+    _content.appendChild(_detectionContent);
+ 
+    if (_wrapper != null)
+    {
+        _videoContent.appendChild(_wrapper.element);
+    }
+
+    _viewer = null;
+
+    if (_isViewer)
+    {
+        if (_combine)
+        {
+            var div = document.createElement("div");
+            div.style.width = (_size.width + 50) + "px";
+            div.style.height = _size.height + "px";
+            _content.appendChild(div);
+
+            var header = (_numchannels > 1) ? (_numchannels + " Channels") : (_numchannels + " Channel");
+
+            _viewer = _visuals.createImageViewer(div,null,{image:"image",header:header,show_header:true});
+            setViewerOptions(_viewer);
+        }
+    }
+
+    _channels = [];
+    _channel = 1;
+
+    for (var i = 0; i < _numchannels; i++)
+    {
+        new Channel();
+    }
+
+    /*
+    if (_isViewer)
+    {
+        if (_publishObjects)
+        {
+            createObjectSubscriber();
+        }
+    }
+    */
+
+    _esp.size();
+}
+
+function
+createCanvas(scale)
+{
+    _canvas = document.getElementById("canvas");
+    /*
+    _canvas.width = _size.width * scale;
+    _canvas.height = (_size.height * scale - 60);
+    */
+    _canvas.width = _size.width;
+    _canvas.height = _size.height;
+    _context = _canvas.getContext("2d");
+}
+
+function
+createImageContainer()
+{
+    var div = document.createElement("div");
+    div.style.width = (_size.width * _scale + 50) + "px";
+    div.style.height = (_size.height * _scale) + "px";
+    div.style.margin = "auto";
+    _videoContent.appendChild(div);
+    return(div);
+}
+
+function
+setViewerOptions(viewer)
+{
+    viewer.setOpt("image_width",_size.width);
+    viewer.setOpt("image_height",_size.height);
+    viewer.setOpt("text_color",_color1);
+    viewer.setOpt("rect_color",_color2);
+    viewer.setOpt("line_color",_color1);
+    viewer.setOpt("point_color",_color2);
+    viewer.setOpt("searchtext",_searchtext);
+    viewer.setOpt("search",_search);
+    viewer.setOpt("radius",3);
+    viewer.setOpt("min_score",_minscore);
+    viewer.objectDelegate = {objectFound:handleObject};
+}
+
+function
+createObjectSubscriber()
+{
+    if (_objectTable == null)
+    {
+        _objectTable = document.createElement("div");
+        _objectTable.style.width = (_size.width + 50) + "px";
+        _objectTable.style.height = _size.height + "px";
+    }
+
+    _content.appendChild(_objectTable);
+
+    if (_objectSubscriber == null)
+    {
+        _connection.getEventCollection({window:_project + "/contquery/object_aggr",sort:"count",interval:2000}).then(
+            function(result) {
+                _objectSubscriber = result;
+                _visuals.createTable(_objectTable,_objectSubscriber,{header:"Objects Detected"});
+                _esp.size();
+            }
+        );
+    }
+    else
+    {
+        _visuals.createTable(_objectTable,_objectSubscriber,{header:"Objects Detected"});
+    }
+
+    _esp.size();
+}
+
+var delegate = {
+    ready:function(connection)
+    {
+        _esp.clearStatus();
+        if (_loading != null)
+        {
+            _loading.pop();
+            _loading = null;
+        }
+
+        _connection = connection;
+
+        _connection.getProjectXml(_project).then(
+            function(result) {
+                _modelXml = _esp.getXPath().format(result);
+            }
+        );
+
+        /*
+        if (_isViewer && _publishObjects)
+        {
+            _connection.getPublisher({window:_project + "/contquery/w_object"}).then(
+                function(result) {
+                    _objectPublisher = result;
+                }
+            );
+        }
+        */
+
+        createChannels();
+
+        if (_video != null)
+        {
+            var video = _storage.getOpt("video","").trim();
+
+            if (_storage.getOpt("webcam",true) || video.length == 0)
+            {
+                _video.src = null;
+
+                if (navigator.mediaDevices.getUserMedia)
+                {
+                    var video = {};
+                    navigator.mediaDevices.getUserMedia({video:video}).then(
+                        function (result) {
+                            _video.srcObject = result;
+                        })
+                        .catch(function (error) {
+                            console.log(error.name + ": " + error);
+                        });
+                }
+            }
+            else
+            {
+                var url = new URL(video,document.URL).toString();
+                _video.srcObject = null;
+                _video.src = url;
+            }
+        }
+    },
+
+    error:function(connection)
+    {
+        _esp.clearStatus();
+
+        if (_loading != null)
+        {
+            _loading.pop();
+            _loading = null;
+        }
+
+        var url = connection.httpurlBase;
+        url += "/eventStreamProcessing/v1/";
+
+        var message = "";
+        message += "Failed to connect to the ESP server.<br/><br/> If this is a certificate issue you may need to go ";
+        message += "<a href='" + url + "' target='_blank'>here</a> and accept the certificate.";
+
+        _esp.getDialogs().message("Connect Failed",message);
+    }
+};
+
+var _loading = null;
+
+function
+connect(server)
+{
+    _server = server;
+
+    if (_isPublisher)
+    {
+        getOnnxModel().then(
+            function(result) {
+                var model = result;
+                model.force = true;
+                _loading = _esp.getDialogs().status({title:"Loading",text:"Loading ONNX Model..."});
+                _esp.connect(_server,delegate,{model:model,reconnect:0});
+            },
+            function(error) {
+                console.log(error);
+            }
+        );
+    }
+    else
+    {
+        _esp.connect(_server,delegate);
+    }
+}
+
+function
+onnx()
+{
+    var o = {
+        ok:function(dialog) {
+            var values = dialog.getValues();
+            for (name in values)
+            {
+                _storage.setOpt(name,values[name]);
+            }
+
+            setTimeout(function(){
+                    connect(values["espserver"]);
+                },10);
+
+            return(true);
+        }
+    };
+
+    var form = [];
+    //form.push({name:"espserver",label:"ESP Server:",value:_storage.getOpt("espserver","http://d10d969.na.sas.com:40001"),focus:true});
+    form.push({name:"espserver",label:"ESP Server:",value:_storage.getOpt("espserver"),focus:true});
+    form.push({name:"video",label:"Video:",value:_storage.getOpt("video","PeopleWalking1.mp4")});
+    form.push({name:"webcam",label:"Use Webcam?",type:"boolean",value:_storage.getOpt("webcam",false)});
+    form.push({name:"models-home",label:"ONNX Models Home:",value:_storage.getOpt("models-home")});
+    form.push({name:"projects-home",label:"ONNX Projects Home:",value:_storage.getOpt("projects-home")});
+
+    var types = _config["model-types"];
+
+    form.push({name:"type",label:"ONNX Model Type:",type:"select",value:_storage.getOpt("type","tiny-yolov2"),
+                options:types,
+                onchange:function(e) {
+                    var select = dialog.getControl("model");
+
+                    while (select.options.length > 0)
+                    {
+                        select.remove(0);
+                    }
+
+                    var value = this.value;
+                    var models = [];
+
+                    for (var i = 0; i < types.length; i++)
+                    {
+                        if (types[i].value == value)
+                        {
+                            models = types[i].models;
+                            break;
+                        }
+                    }
+
+                    var current = _storage.getOpt("model");
+                    var option;
+
+                    models.forEach((model) => {
+                        var option = document.createElement("option");
+                        option.value = model.value;
+                        option.appendChild(document.createTextNode(model.name));
+
+                        if (model.value == current)
+                        {
+                            option.selected = true;
+                        }
+                        select.add(option);
+                    });
+
+                    select.dispatchEvent(new Event("change"));
+                }
+            });
+
+    var eps = _config["execution-providers"];
+
+    form.push({name:"model",label:"ONNX Model:",type:"select",value:_storage.getOpt("model"),
+                onchange:function(e) {
+                    var select = dialog.getControl("execprov");
+
+                    while (select.options.length > 0)
+                    {
+                        select.remove(0);
+                    }
+
+                    var current = _storage.getOpt("execprov","cpu");
+
+                    if (current == "openvino")
+                    {
+                        dialog.showControl("openvino");
+                    }
+                    else
+                    {
+                        dialog.hideControl("openvino");
+                    }
+
+                    eps.forEach((ep) => {
+                        var option = document.createElement("option");
+                        option.value = ep.value;
+                        option.appendChild(document.createTextNode(ep.name));
+                        if (ep.value == current)
+                        {
+                            option.selected = true;
+                        }
+                        select.add(option);
+                    });
+                }
+    });
+    form.push({name:"execprov",label:"Execution Provider:",type:"select",value:_storage.getOpt("execprov","cuda"),
+                onchange:function(e) {
+                    var value = this.value;
+
+                    if (value == "openvino")
+                    {
+                        dialog.showControl("openvino");
+                    }
+                    else
+                    {
+                        dialog.hideControl("openvino");
+                    }
+                }
+                });
+    form.push({name:"openvino",label:"OpenVINO Device:",type:"select",value:_storage.getOpt("openvino"),
+                options:[
+                    {name:"CPU FP 32",value:"CPU_FP32"},
+                    {name:"GPU FP 32",value:"GPU_FP32"},
+                    {name:"GPU FP 16",value:"GPU_FP16"},
+                ]
+    });
+
+    pause();
+
+    var dialog = _esp.getDialogs().showDialog({title:"Configure ONNX Model",delegate:o,form:form,width:"50%",label_width:"50px"});
+
+    dialog.getControl("type").dispatchEvent(new Event("change"));
+}
+
+function
+shutdown()
+{
+    if (_connection != null)
+    {
+        _connection.close();
+    }
+
+    _channels.forEach((channel) => {
+        channel.close();
+    });
+
+    _channels = [];
+    _channel = 1;
+}
+
+function
+getOnnxModel()
+{
+    return(new Promise((resolve,reject) => {
+        var s = "Projects/";
+        s += _storage.getOpt("type");
+        s += "/model.xml";
+        var url = new URL(s,document.URL).toString();
+        var model = {};
+        model.name = _project;
+        model.options = {overwrite:true,validate:false};
+
+        var onnxModel = _storage.getOpt("type");
+        onnxModel += "/";
+        onnxModel += _storage.getOpt("model");
+
+        _esp.getAjax().create(url).get().then(
+            function(result) {
+                var s = result.text.replaceAll("@ONNX_MODELS_PATH@",_storage.getOpt("models-home","Models"));
+                s = s.replaceAll("@ONNX_PROJECTS_HOME@",_storage.getOpt("projects-home","Projects"));
+                s = s.replaceAll("@ONNX_MODEL@",onnxModel);
+                s = s.replaceAll("@EXEC_PROV@",_storage.getOpt("execprov","cuda"));
+                s = s.replaceAll("@FILE_INPUT_ACTIVE@","false");
+                s = s.replaceAll("@WRITE_ESP_OUTPUT_TO_CSV@","false");
+                s = s.replaceAll("@DEMO_PATH@",".");
+                s = s.replaceAll("@BASE_PATH@","/tmp");
+                s = s.replaceAll("@IMAGE_REPEAT_COUNT@","0");
+                s = s.replaceAll("@OPENVINO_DEVICE@",_storage.getOpt("openvino","CPU_FP32"));              
+                model.data = s;
+                resolve(model);
+            },
+            function(error) {
+                reject(error);
+            }
+        );
+    }));
+}
+
+function
+properties()
+{
+    var webcam = _storage.getOpt("webcam",true);
+    var video = _storage.getOpt("video","");
+
+    var o = {
+        ok:function(dialog) {
+            var values = dialog.getValues();
+            for (name in values)
+            {
+                _storage.setOpt(name,values[name]);
+            }
+            _color1 = values["color1"];
+            _color2 = values["color2"];
+            _quality = values["quality"];
+            _search = values["search"];
+            _mirror = values["mirror"];
+            _publishRate = values["publish_rate"];
+            _minscore = values["min_score"];
+            _publishObjects = values["publish_objects"];
+            _searchtext = [];
+            if (_isViewer)
+            {
+                if (values.hasOwnProperty("searchtext"))
+                {
+                    values["searchtext"].split("\n").forEach((s) => {
+                        _searchtext.push(s.trim());
+                    });
+                    _storage.setOpt("searchtext",_searchtext);
+                }
+            }
+
+            if (_video != null)
+            {
+                _video.style.transform = _mirror ? "scaleX(-1)" : "scaleX(1)";
+
+                if (webcam == false)
+                {
+                    if (_storage.getOpt("webcam") || _storage.getOpt("video","").length == 0)
+                    {
+                        _video.src = null;
+
+                        if (navigator.mediaDevices.getUserMedia)
+                        {
+                            var properties = {};
+                            navigator.mediaDevices.getUserMedia({video:properties}).then(
+                                function (result) {
+                                    _video.srcObject = result;
+                                })
+                                .catch(function (error) {
+                                    console.log(error.name + ": " + error);
+                                });
+                        }
+                    }
+                    else if (_storage.getOpt("video") != video)
+                    {
+                        var url = new URL(_storage.getOpt("video"),document.URL).toString();
+                        _video.srcObject = null;
+                        _video.src = url;
+                    }
+                }
+                else if (_storage.getOpt("webcam") == false)
+                {
+                    var url = new URL(_storage.getOpt("video"),document.URL).toString();
+                    _video.srcObject = null;
+                    _video.src = url;
+                }
+
+                var videoWidth = values["video_width"];
+
+                if (videoWidth != _videoWidth)
+                {
+                    _videoWidth = videoWidth;
+                    _video.width = _videoWidth;
+                    size();
+                }
+            }
+
+            var numchannels = values.hasOwnProperty("numchannels") ? values["numchannels"] : 1;
+            var combine = values.hasOwnProperty("combine_output") ? values["combine_output"] : false;
+            var scale = values["scale"];
+
+            if (combine != _combine ||
+                numchannels != _channels.length ||
+                scale != _scale)
+            {
+                if (scale != _scale)
+                {
+                    _scale = scale;
+                    createCanvas(scale);
+                }
+                _numchannels = numchannels;
+                _combine = combine;
+                createChannels();
+            }
+            else
+            {
+                _numchannels = numchannels;
+
+                if (_isViewer)
+                {
+                    _combine = combine;
+
+                    if (_viewer != null)
+                    {
+                        _viewer.setOpt("text_color",_color1);
+                        _viewer.setOpt("rect_color",_color2);
+                        _viewer.setOpt("line_color",_color1);
+                        _viewer.setOpt("point_color",_color2);
+                        _viewer.setOpt("search",_search);
+                        _viewer.setOpt("searchtext",_searchtext);
+                        _viewer.setOpt("min_score",_minscore);
+                    }
+                    else
+                    {
+                        _channels.forEach((channel) => {
+                            channel._viewer.setOpt("text_color",_color1);
+                            channel._viewer.setOpt("rect_color",_color2);
+                            channel._viewer.setOpt("line_color",_color1);
+                            channel._viewer.setOpt("point_color",_color2);
+                            channel._viewer.setOpt("search",_search);
+                            channel._viewer.setOpt("searchtext",_searchtext);
+                            channel._viewer.setOpt("min_score",_minscore);
+                        });
+                    }
+                }
+
+                /*
+                if (_publishObjects == false)
+                {
+                    if (_objectTable != null)
+                    {
+                        _content.removeChild(_objectTable);
+                    }
+                }
+                else
+                {
+                    createObjectSubscriber();
+                }
+                */
+            }
+
+            return(true);
+        }
+    };
+
+    var form = [];
+
+    if (_isPublisher)
+    {
+        form.push({name:"video_width",label:"Video Width:",value:_videoWidth});
+        form.push({name:"video",label:"Video:",value:_storage.getOpt("video")});
+        form.push({name:"webcam",label:"Use Webcam?",type:"boolean",value:_storage.getOpt("webcam")});
+        form.push({name:"publish_rate",label:"Publish Rate (FPS):",value:_publishRate});
+        form.push({name:"quality",label:"Image Quality:",type:"select",value:_storage.getOpt("quality",".5"),
+            options:[
+                {name:"1 (Highest)",value:1},
+                {name:"2",value:.7},
+                {name:"3",value:.5},
+                {name:"4",value:.3},
+                {name:"5",value:.1}
+            ]
+        });
+        form.push({name:"mirror",label:"Mirror Image:",type:"boolean",value:_mirror});
+    }
+
+    if (_isViewer)
+    {
+        /*
+        form.push({name:"combine_output",label:"Combine Output:",type:"boolean",value:_combine});
+        form.push({name:"search",label:"Search:",type:"boolean",value:_search});
+        form.push({name:"searchtext",label:"Search Text:",type:"textarea",value:_searchtext});
+        */
+        form.push({name:"color1",label:"Color 1:",value:_storage.getOpt("color1","white")});
+        form.push({name:"color2",label:"Color 2:",value:_storage.getOpt("color2","white")});
+        form.push({name:"scale",label:"Image Scale:",value:_storage.getOpt("scale","1")});
+        /*
+        form.push({name:"publish_objects",label:"Publish Objects:",type:"boolean",value:_publishObjects});
+        */
+        form.push({name:"min_score",label:"Minimum Score:",value:_minscore});
+    }
+
+    /*
+    form.push({name:"numchannels",label:"# of Channels:",type:"select",value:_numchannels,
+        options:[
+            {name:"1"},
+            {name:"2"},
+            {name:"3"},
+            {name:"4"},
+            {name:"5"}
+        ]
+    });
+    */
+
+    pause();
+
+    _esp.getDialogs().showDialog({title:"Demo Properties",delegate:o,form:form,label_width:"100px"});
+}
+
+function
+handleObject(o)
+{
+    /*
+    if (_publishObjects)
+    {
+        _objectPublisher.add(o);
+        _objectPublisher.publish();
+    }
+    */
+}
+
+var _current = 0;
+var _index = 0;
+
+function
+videocb(now,metadata)
+{
+    if (now - _current < (1000 / _publishRate))
+    {
+        if (_video.requestVideoFrameCallback != null)
+        {
+            _video.requestVideoFrameCallback(videocb);
+        }
+
+        return;
+    }
+
+    _current = now;
+
+    publish();
+}
+
+function
+publish()
+{
+    if (_mirror)
+    {
+        _context.save();
+        _context.translate(canvas.width, 0);
+        _context.scale(-1,1);
+        _context.drawImage(_video,0,0,canvas.width,canvas.height);
+        _context.restore();
+    }
+    else
+    {
+        _context.drawImage(_video,0,0,canvas.width,canvas.height);
+    }
+
+    var channel = null;
+
+    if (_channels.length > 0)
+    {
+        if (_index < _channels.length)
+        {
+            channel = _channels[_index];
+            _index++;
+        }
+        else
+        {
+            _index = 0;
+            channel = _channels[_index];
+        }
+    }
+
+    if (channel == null)
+    {
+        return;
+    }
+
+    var data = canvas.toDataURL("image/jpeg",_quality);
+    var index = data.indexOf(",");
+    data = data.substr(index + 1);
+
+    channel.publish(data);
+
+    if (_video.requestVideoFrameCallback != null)
+    {
+        _video.requestVideoFrameCallback(videocb);
+    }
+}
+
+function
+isPlaying()
+{
+    return(_isPublisher && _video.paused == false);
+}
+
+function
+play()
+{
+    if (_isPublisher)
+    {
+        if (_video.paused)
+        {
+            if (_interval != null)
+            {
+                clearInterval(_interval);
+                _interval = null;
+            }
+
+            _video.style.transform = _mirror ? "scaleX(-1)" : "scaleX(1)";
+
+            _video.play();
+
+            if (_video.requestVideoFrameCallback != null)
+            {
+                _video.requestVideoFrameCallback(videocb);
+            }
+            else
+            {
+                _interval = setInterval(publish,parseInt(1000 / _publishRate));
+            }
+        }
+    }
+}
+
+function
+pause()
+{
+    if (_isPublisher)
+    {
+        if (_video.paused == false)
+        {
+            if (_interval != null)
+            {
+                clearInterval(_interval);
+                _interval = null;
+            }
+
+            _video.pause();
+        }
+    }
+}
+
+function
+playpause()
+{
+    if (_video.paused)
+    {
+        play();
+    }
+    else
+    {
+        pause();
+    }
+}
+
+</script>
+<style type="text/css">
+
+video
+{
+    border:1px solid #c8c8c8;
+}
+
+div#content
+{
+    padding:20px;
+}
+
+</style>
+</head>
+
+<body onload="init()">
+
+    <div id="banner">
+        <table style="width:100%" cellspacing="0" cellpadding="0">
+            <tr>
+                <td id="bannerTitle"></td>
+                <td class="icon">
+                    <a class="icon" href="javascript:_esp.showCodeDialog('Model XML',_modelXml)" title="Model XML">&#xf7c1;</a>
+                    <a class="icon" href="javascript:_visuals.showModel(_connection,{title:'ESP Model',header:'Model Viewer',project:_project,type:true,memory:true,show_projects:false})" title="ESP Model">&#xf501;</a>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div id="content" class="container">
+    </div>
+
+    <!--
+    <canvas id="canvas" style="display:block"></canvas>
+    -->
+    <canvas id="canvas" style="display:none"></canvas>
+
+    <div id="footer">&nbsp;</div>
+
+</body>
+
+</html>
