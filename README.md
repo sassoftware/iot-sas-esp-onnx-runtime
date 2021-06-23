@@ -32,18 +32,21 @@ Other Considerations:
 ### Installation
 **Note:** These instructions assume you have downloaded the software license from `my.sas.com`. If you have not, follow [these instructions](https://go.documentation.sas.com/doc/en/espcdc/v_008/dplyedge0phy0lax/p1goagdh3x1uqdn1m1rn57lngpud.htm) first.
 
-1.	Create the following directory and copy the license files into it:
+1. If not already done during Docker Installation, run the following command to manage Docker as a non-root user. *This setting is required to enable use of the scripts*:
+
+   ```bash
+   sudo usermod -aG docker $USER
+   ```
+
+2. Log out and log back in so that your group membership is re-evaluated.
+
+3. Create the following directory and copy the license files into it:
 ```bash
 mkdir -p -m777 ~/ORT-ESPDemo-Home
 ```
 Please ensure that only one license file is present in the directory above and that file extension is `.jwt`.
 
-2.	Download or clone the repository:
-```bash
-cd ~
-git clone https://github.com/sassoftware/iot-sas-esp-onnx-runtime.git
-```
-3. Run the following command to use SAS Mirror Manager to retrieve the login information for cr.sas.com:
+2.	Run the following command to use SAS Mirror Manager to retrieve the login information for cr.sas.com:
 ```bash
 ./mirrormgr list remote docker login --deployment-data _file-name-of-certs.zip_
 ```
@@ -52,13 +55,13 @@ The following information is returned:
 docker login -u ordernumber -p 'password' `cr.sas.com`
 ```
 4. Run the returned command in Docker to log into cr.sas.com.
+5. Download or clone the repository:
 
-5. If not already done during Docker Installation, run the following command to manage Docker as a non-root user. *This setting is required to enable use of the scripts*:
 
-   ```bash
-   sudo usermod -aG docker $USER
-   ```
-6.  Log out and log back in so that your group membership is re-evaluated.
+```bash
+cd ~
+git clone https://github.com/sassoftware/iot-sas-esp-onnx-runtime.git
+```
 
 ## Getting Started
 

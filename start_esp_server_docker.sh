@@ -94,8 +94,8 @@ dockerENV="-e ESPENV=${ESPENV} \
 mountPath="-v ${demoPath}:/Demos \
            -v ${demoHome}:/Demos-Home"
 
-#Define Openvino Device Mount (if not present no error will be shown a startup)
-openvino="--device /dev/dri:/dev/dri"
+#Define Openvino GPU Device Mount (if not present no error will be shown a startup)
+#openvino="--device /dev/dri:/dev/dri"
 
 
 docker run -it  $mountPath $openvino $cuda $portsmapping $rootPrivilege \
